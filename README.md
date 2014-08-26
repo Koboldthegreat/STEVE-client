@@ -1,5 +1,9 @@
-jasper-client
+STEVE-client
 =============
+Steve is a helpfull alround humanoid robot built on the jasper voice computing platform
+
+
+##Forked from jasper-client
 
 Client code for the Jasper voice computing platform. Jasper is an open source platform for developing always-on, voice-controlled applications.
 
