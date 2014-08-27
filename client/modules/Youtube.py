@@ -1,9 +1,12 @@
 #!/usr/bin/python
 
+#youtube module for steve-client
+
 from apiclient.discovery import build
 from apiclient.errors import HttpError
 from oauth2client.tools import argparser
 import os
+
 
 
 # Set DEVELOPER_KEY to the API key value from the APIs & auth > Registered apps
