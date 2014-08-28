@@ -60,9 +60,11 @@ def handle(text, mic, profile):
    argparser.add_argument("--max-results", help="Max results", default=25)
    args = argparser.parse_args()
    
-   #asks the video name
-   mic.say("Which song do you want to play?")
-   quote = raw_input("Give the video name ")
+   #asks the song name
+   mic.say("Which song do I have to search on youtube?")
+   quote = mic.activeListen()
+   
+   #quote = raw_input("Give the video name ")
    
    try:
    	youtube_search(quote, 25)

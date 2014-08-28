@@ -25,7 +25,7 @@ def handle(text, mic, profile):
             "me/friends", args={'fields': 'id,name,birthday'})
     except GraphAPIError:
         mic.say(
-            "I have not been authorized to query your Facebook. If you would like to check birthdays in the future, please visit the Jasper dashboard.")
+            "I have not been authorized to query your Facebook. If you would like to check birthdays in the future, please visit the Steve dashboard.")
         return
     except:
         mic.say(
