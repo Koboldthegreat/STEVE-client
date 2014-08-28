@@ -7,12 +7,13 @@ from apiclient.errors import HttpError
 from oauth2client.tools import argparser
 import os
 
-
+WORDS = ["SEARCH", "ON", "YOUTUBE"]
 
 # Set DEVELOPER_KEY to the API key value from the APIs & auth > Registered apps
 # tab of
 #   https://cloud.google.com/console
 # Please ensure that you have enabled the YouTube Data API for your project.
+
 DEVELOPER_KEY = "AIzaSyCS5o_cM9fjZvEvNA5qIMVA5QcrxNAKX-c"
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
@@ -20,6 +21,9 @@ YOUTUBE_API_VERSION = "v3"
 videosdict = {}
 videos = []
 
+def isValid(text):
+	return bool(re.search(r'\byoutube\b', text, re.IGNOREC))
+			
 def youtube_play(id):
 	url = "http://www.youtube.com/watch?v=" + id
 	os.system("youtube-dl --id -x " + url)
@@ -49,26 +53,31 @@ def youtube_search(quote, max):
   
   for index, x in enumerate(videos):
 	  print index, x
+#this function starts when the word "youtube" is said
+def handle(text, mic, profile):
 
-if __name__ == "__main__":
-  argparser.add_argument("--q", help="Search term", default="Google")
-  argparser.add_argument("--max-results", help="Max results", default=25)
-  args = argparser.parse_args()
- 
-  quote = raw_input("Give the video name ")
-  try:
-    youtube_search(quote, 25)
-  except HttpError, e:
-    print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
-  
-  while True:
+   argparser.add_argument("--q", help="Search term", default="Google")
+   argparser.add_argument("--max-results", help="Max results", default=25)
+   args = argparser.parse_args()
+   
+   #asks the video name
+   mic.say("Which song do you want to play?")
+   quote = raw_input("Give the video name ")
+   
+   try:
+   	youtube_search(quote, 25)
+   except HttpError, e:
+   		print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
+   while True:
 	  try:
 		number = raw_input("Choose a video number")
 		number = int(number)
 		break
 	  except:
 	    print "Please give a number"
-  
-  youtube_play(videosdict[videos[number]])
+   youtube_play(videosdict[videos[number]])
 
+#starts the module when you run the module on it own, this is only to test the module
+if __name__ == "__main__":
+	handle("test", "test", "test") 
   
