@@ -1,10 +1,26 @@
+# -*- coding: utf-8-*-
 import os
+import tempfile
 import subprocess
 import re
+import yaml
 
-TEMP_FILENAME = "g2ptemp"
+import jasperpath
+
 PHONE_MATCH = re.compile(r'<s> (.*) </s>')
-PHONETISAURUS_PATH = os.environ['JASPER_HOME'] + "/phonetisaurus"
+
+FST_MODEL = None
+
+# Try to get fst_model from config
+profile_path = os.path.join(os.path.dirname(__file__), 'profile.yml')
+if os.path.exists(profile_path):
+    with open(profile_path, 'r') as f:
+        profile = yaml.safe_load(f)
+        if 'pocketsphinx' in profile and 'fst_model' in profile['pocketsphinx']:
+            FST_MODEL = profile['pocketsphinx']['fst_model']
+
+if not FST_MODEL:
+    FST_MODEL = os.path.join(jasperpath.APP_PATH, os.pardir, 'phonetisaurus', 'g014b2b.fst')
 
 
 def parseLine(line):
@@ -16,35 +32,34 @@ def parseOutput(output):
 
 
 def translateWord(word):
-    out = subprocess.check_output(['phonetisaurus-g2p', '--model=%s' %
-                                  PHONETISAURUS_PATH + "/g014b2b.fst", '--input=%s' % word])
+    out = subprocess.check_output(
+        ['phonetisaurus-g2p', '--model=%s' % FST_MODEL, '--input=%s' % word])
     return parseLine(out)
 
 
 def translateWords(words):
     full_text = '\n'.join(words)
 
-    f = open(TEMP_FILENAME, "wb")
-    f.write(full_text)
-    f.flush()
+    with tempfile.NamedTemporaryFile(suffix='.g2p', delete=False) as f:
+        temp_filename = f.name
+        f.write(full_text)
 
-    output = translateFile(TEMP_FILENAME)
-    os.remove(TEMP_FILENAME)
+    output = translateFile(temp_filename)
+    os.remove(temp_filename)
 
     return output
 
 
 def translateFile(input_filename, output_filename=None):
-    out = subprocess.check_output(['phonetisaurus-g2p', '--model=%s' %
-        PHONETISAURUS_PATH + "/g014b2b.fst", '--input=%s' % input_filename, '--words', '--isfile'])
+    out = subprocess.check_output(
+        ['phonetisaurus-g2p', '--model=%s' % FST_MODEL, '--input=%s' % input_filename, '--words', '--isfile'])
     out = parseOutput(out)
 
     if output_filename:
         out = '\n'.join(out)
 
-        f = open(output_filename, "wb")
-        f.write(out)
-        f.close()
+        with open(output_filename, "wb") as f:
+            f.write(out)
 
         return None
 

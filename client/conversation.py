@@ -1,58 +1,41 @@
+# -*- coding: utf-8-*-
+import logging
 from notifier import Notifier
-from musicmode import *
 from brain import Brain
-from mpd import MPDClient
-
 
 class Conversation(object):
 
     def __init__(self, persona, mic, profile):
+        self._logger = logging.getLogger(__name__)
         self.persona = persona
         self.mic = mic
         self.profile = profile
         self.brain = Brain(mic, profile)
         self.notifier = Notifier(profile)
 
-    def delegateInput(self, text):
-        """A wrapper for querying brain."""
-
-        # check if input is meant to start the music module
-        if any(x in text.upper() for x in ["SPOTIFY", "MUSIC"]):
-            # check if mpd client is running
-            try:
-                client = MPDClient()
-                client.timeout = None
-                client.idletimeout = None
-                client.connect("localhost", 6600)
-            except:
-                self.mic.say(
-                    "I'm sorry. It seems that Spotify is not enabled. Please read the documentation to learn how to configure Spotify.")
-                return
-
-            self.mic.say("Please give me a moment, I'm loading your Spotify playlists.")
-            music_mode = MusicMode(self.persona, self.mic)
-            music_mode.handleForever()
-            return
-
-        self.brain.query(text)
-
     def handleForever(self):
         """Delegates user input to the handling function when activated."""
+        self._logger.info("Starting to handle conversation with keyword '%s'.", self.persona)
         while True:
-
             # Print notifications until empty
             notifications = self.notifier.getAllNotifications()
             for notif in notifications:
-                print notif
+                self._logger.info("Received notification: '%s'", str(notif))
 
-            try:
-                threshold, transcribed = self.mic.passiveListen(self.persona)
-            except:
+            self._logger.debug("Started listening for keyword '%s'", self.persona)
+            threshold, transcribed = self.mic.passiveListen(self.persona)
+            self._logger.debug("Stopped listening for keyword '%s'", self.persona)
+
+            if not transcribed or not threshold:
+                self._logger.info("Nothing has been said or transcribed.")
                 continue
+            self._logger.info("Keyword '%s' has been said!", self.persona)
 
-            if threshold:
-                input = self.mic.activeListen(threshold)
-                if input:
-                    self.delegateInput(input)
-                else:
-                    self.mic.say("Pardon?")
+            self._logger.debug("Started to listen actively with threshold: %r", threshold)
+            input = self.mic.activeListenToAllOptions(threshold)
+            self._logger.debug("Stopped to listen actively with threshold: %r", threshold)
+            
+            if input:
+                self.brain.query(input)
+            else:
+                self.mic.say("Pardon?")

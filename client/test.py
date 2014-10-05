@@ -1,31 +1,64 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8-*-
 import os
-
-if os.environ.get('JASPER_HOME') is None:
-    os.environ['JASPER_HOME'] = '/home/pi'
-
+import sys
 import unittest
+import logging
 import argparse
-from mock import patch
+from mock import patch, Mock
 from urllib2 import URLError, urlopen
-import yaml
+
 import test_mic
+import vocabcompiler
 import g2p
 import brain
+import jasperpath
+import tts
+from diagnose import Diagnostics
 
+DEFAULT_PROFILE = {
+    'prefers_email': False,
+    'location': '08544',
+    'timezone': 'US/Eastern',
+    'phone_number': '012344321'
+}
 
-def activeInternet():
-    try:
-        urlopen('http://www.google.com', timeout=1)
-        return True
-    except URLError:
-        return False
+class UnorderedList(list):
 
+    def __eq__(self, other):
+        return sorted(self) == sorted(other)
+
+class TestVocabCompiler(unittest.TestCase):
+
+    def testWordExtraction(self):
+        sentences = "temp_sentences.txt"
+        dictionary = "temp_dictionary.dic"
+        languagemodel = "temp_languagemodel.lm"
+
+        words = []
+
+        mock_module = Mock()
+        mock_module.WORDS = [
+            'MOCK'
+        ]
+
+        words.extend(mock_module.WORDS)
+
+        with patch.object(g2p, 'translateWords') as translateWords:
+            with patch.object(vocabcompiler, 'text2lm') as text2lm:
+                with patch.object(brain.Brain, 'get_modules', classmethod(lambda cls: [mock_module])) as modules:
+                    vocabcompiler.compile(sentences, dictionary, languagemodel)
+
+                    translateWords.assert_called_once_with(UnorderedList(words))
+                    self.assertTrue(text2lm.called)
+        os.remove(sentences)
+        os.remove(dictionary)
 
 class TestMic(unittest.TestCase):
 
     def setUp(self):
-        self.jasper_clip = "../static/audio/jasper.wav"
-        self.time_clip = "../static/audio/time.wav"
+        self.jasper_clip = jasperpath.data('audio', 'jasper.wav')
+        self.time_clip = jasperpath.data('audio', 'time.wav')
 
         from stt import PocketSphinxSTT
         self.stt = PocketSphinxSTT()
@@ -65,7 +98,7 @@ class TestG2P(unittest.TestCase):
 class TestModules(unittest.TestCase):
 
     def setUp(self):
-        self.profile = yaml.safe_load(open("profile.yml", "r"))
+        self.profile = DEFAULT_PROFILE
         self.send = False
 
     def runConversation(self, query, inputs, module):
@@ -99,7 +132,7 @@ class TestModules(unittest.TestCase):
         inputs = ["Who's there?", "Random response"]
         outputs = self.runConversation(query, inputs, Joke)
         self.assertEqual(len(outputs), 3)
-        allJokes = open("../static/text/JOKES.txt", "r").read()
+        allJokes = open(jasperpath.data('text','JOKES.txt'), 'r').read()
         self.assertTrue(outputs[2] in allJokes)
 
     def testTime(self):
@@ -109,7 +142,7 @@ class TestModules(unittest.TestCase):
         inputs = []
         self.runConversation(query, inputs, Time)
 
-    @unittest.skipIf(not activeInternet(), "No internet connection")
+    @unittest.skipIf(not Diagnostics.check_network_connection(), "No internet connection")
     def testGmail(self):
         key = 'gmail_password'
         if not key in self.profile or not self.profile[key]:
@@ -121,7 +154,7 @@ class TestModules(unittest.TestCase):
         inputs = []
         self.runConversation(query, inputs, Gmail)
 
-    @unittest.skipIf(not activeInternet(), "No internet connection")
+    @unittest.skipIf(not Diagnostics.check_network_connection(), "No internet connection")
     def testHN(self):
         from modules import HN
 
@@ -133,7 +166,7 @@ class TestModules(unittest.TestCase):
         outputs = self.runConversation(query, inputs, HN)
         self.assertTrue("front-page articles" in outputs[1])
 
-    @unittest.skipIf(not activeInternet(), "No internet connection")
+    @unittest.skipIf(not Diagnostics.check_network_connection(), "No internet connection")
     def testNews(self):
         from modules import News
 
@@ -145,7 +178,7 @@ class TestModules(unittest.TestCase):
         outputs = self.runConversation(query, inputs, News)
         self.assertTrue("top headlines" in outputs[1])
 
-    @unittest.skipIf(not activeInternet(), "No internet connection")
+    @unittest.skipIf(not Diagnostics.check_network_connection(), "No internet connection")
     def testWeather(self):
         from modules import Weather
 
@@ -156,24 +189,29 @@ class TestModules(unittest.TestCase):
             "can't see that far ahead" in outputs[0]
             or "Tomorrow" in outputs[0])
 
+class TestTTS(unittest.TestCase):
+    def testTTS(self):
+        tts_engine = tts.get_engine_by_slug('dummy-tts')
+        tts_instance = tts_engine()
+        tts_instance.say('This is a test.')
 
 class TestBrain(unittest.TestCase):
 
     @staticmethod
     def _emptyBrain():
         mic = test_mic.Mic([])
-        profile = yaml.safe_load(open("profile.yml", "r"))
+        profile = DEFAULT_PROFILE
         return brain.Brain(mic, profile)
 
-    @patch.object(brain, 'logError')
-    def testLog(self, logError):
+    def testLog(self):
         """Does Brain correctly log errors when raised by modules?"""
         my_brain = TestBrain._emptyBrain()
         unclear = my_brain.modules[-1]
         with patch.object(unclear, 'handle') as mocked_handle:
-            mocked_handle.side_effect = KeyError('foo')
-            my_brain.query("zzz gibberish zzz")
-            logError.assert_called_with()
+            with patch.object(my_brain._logger, 'error') as mocked_loggingcall:
+                mocked_handle.side_effect = KeyError('foo')
+                my_brain.query("zzz gibberish zzz")
+                self.assertTrue(mocked_loggingcall.called)
 
     def testSortByPriority(self):
         """Does Brain sort modules by priority?"""
@@ -185,11 +223,11 @@ class TestBrain(unittest.TestCase):
     def testPriority(self):
         """Does Brain correctly send query to higher-priority module?"""
         my_brain = TestBrain._emptyBrain()
-        hn_module = 'modules.HN'
+        hn_module = 'HN'
         hn = filter(lambda m: m.__name__ == hn_module, my_brain.modules)[0]
 
         with patch.object(hn, 'handle') as mocked_handle:
-            my_brain.query("hacker news")
+            my_brain.query(["hacker news"])
             self.assertTrue(mocked_handle.called)
 
 
@@ -197,14 +235,30 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Test suite for the Jasper client code.')
     parser.add_argument('--light', action='store_true',
-                        help="runs a subset of the tests (only requires Python dependencies)")
+                        help='runs a subset of the tests (only requires Python dependencies)')
+    parser.add_argument('--debug', action='store_true',
+                        help='show debug messages')
     args = parser.parse_args()
 
-    test_cases = [TestBrain, TestModules]
+    logging.basicConfig()
+    logger = logging.getLogger()
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+
+    # Change CWD to jasperpath.LIB_PATH
+    os.chdir(jasperpath.LIB_PATH)
+
+    test_cases = [TestBrain, TestModules, TestVocabCompiler, TestTTS]
     if not args.light:
         test_cases.append(TestG2P)
         test_cases.append(TestMic)
 
+    suite = unittest.TestSuite()
+
     for test_case in test_cases:
-        suite = unittest.TestLoader().loadTestsFromTestCase(test_case)
-        unittest.TextTestRunner(verbosity=2).run(suite)
+        suite.addTests(unittest.TestLoader().loadTestsFromTestCase(test_case))
+
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+
+    if not result.wasSuccessful():
+        sys.exit("Tests failed")

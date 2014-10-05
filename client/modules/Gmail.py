@@ -1,3 +1,4 @@
+# -*- coding: utf-8-*-
 import imaplib
 import email
 import re
@@ -121,7 +122,7 @@ def handle(text, mic, profile):
             response += ". Senders include: "
             response += '...'.join(senders)
         else:
-            response += " from " + unittest[0]
+            response += " from " + unique_senders[0]
 
         mic.say(response)
 

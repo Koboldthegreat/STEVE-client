@@ -1,13 +1,16 @@
+# -*- coding: utf-8-*-
 """
     The Mic class handles all interactions with the microphone and speaker.
 """
 
 import os
-from wave import open as open_audio
+import tempfile
+import wave
 import audioop
 import pyaudio
 import alteration
-
+import jasperpath
+from stt import TranscriptionMode
 
 class Mic:
 
@@ -26,6 +29,10 @@ class Mic:
         self.speaker = speaker
         self.passive_stt_engine = passive_stt_engine
         self.active_stt_engine = active_stt_engine
+        self._audio = pyaudio.PyAudio()
+
+    def __del__(self):
+        self._audio.terminate()
 
     def getScore(self, data):
         rms = audioop.rms(data, 2)
@@ -43,8 +50,7 @@ class Mic:
         THRESHOLD_TIME = 1
 
         # prepare recording stream
-        audio = pyaudio.PyAudio()
-        stream = audio.open(format=pyaudio.paInt16,
+        stream = self._audio.open(format=pyaudio.paInt16,
                             channels=1,
                             rate=RATE,
                             input=True,
@@ -67,6 +73,9 @@ class Mic:
             lastN.append(self.getScore(data))
             average = sum(lastN) / len(lastN)
 
+        stream.stop_stream()
+        stream.close()
+
         # this will be the benchmark to cause a disturbance over!
         THRESHOLD = average * THRESHOLD_MULTIPLIER
 
@@ -79,7 +88,6 @@ class Mic:
         """
 
         THRESHOLD_MULTIPLIER = 1.8
-        AUDIO_FILE = "passive.wav"
         RATE = 16000
         CHUNK = 1024
 
@@ -90,8 +98,7 @@ class Mic:
         LISTEN_TIME = 10
 
         # prepare recording stream
-        audio = pyaudio.PyAudio()
-        stream = audio.open(format=pyaudio.paInt16,
+        stream = self._audio.open(format=pyaudio.paInt16,
                             channels=1,
                             rate=RATE,
                             input=True,
@@ -137,7 +144,9 @@ class Mic:
         # no use continuing if no flag raised
         if not didDetect:
             print "No disturbance detected"
-            return
+            stream.stop_stream()
+            stream.close()
+            return (None, None)
 
         # cutoff any recording before this disturbance was detected
         frames = frames[-20:]
@@ -152,16 +161,17 @@ class Mic:
         # save the audio data
         stream.stop_stream()
         stream.close()
-        audio.terminate()
-        write_frames = open_audio(AUDIO_FILE, 'wb')
-        write_frames.setnchannels(1)
-        write_frames.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
-        write_frames.setframerate(RATE)
-        write_frames.writeframes(''.join(frames))
-        write_frames.close()
-
-        # check if PERSONA was said
-        transcribed = self.passive_stt_engine.transcribe(AUDIO_FILE, PERSONA_ONLY=True)
+        
+        with tempfile.NamedTemporaryFile(mode='w+b') as f:
+            wav_fp = wave.open(f, 'wb')
+            wav_fp.setnchannels(1)
+            wav_fp.setsampwidth(pyaudio.get_sample_size(pyaudio.paInt16))
+            wav_fp.setframerate(RATE)
+            wav_fp.writeframes(''.join(frames))
+            wav_fp.close()
+            f.seek(0)
+            # check if PERSONA was said
+            transcribed = self.passive_stt_engine.transcribe(f, mode=TranscriptionMode.KEYWORD)
 
         if PERSONA in transcribed:
             return (THRESHOLD, PERSONA)
@@ -171,29 +181,33 @@ class Mic:
     def activeListen(self, THRESHOLD=None, LISTEN=True, MUSIC=False):
         """
             Records until a second of silence or times out after 12 seconds
+
+            Returns the first matching string or None
         """
 
-        AUDIO_FILE = "active.wav"
+        options = self.activeListenToAllOptions(THRESHOLD, LISTEN, MUSIC)
+        if options:
+            return options[0]
+
+    def activeListenToAllOptions(self, THRESHOLD=None, LISTEN=True, MUSIC=False):
+        """
+            Records until a second of silence or times out after 12 seconds
+
+            Returns a list of the matching options or None
+        """
+
         RATE = 16000
         CHUNK = 1024
         LISTEN_TIME = 12
-
-        # user can request pre-recorded sound
-        if not LISTEN:
-            if not os.path.exists(AUDIO_FILE):
-                return None
-
-            return self.active_stt_engine.transcribe(AUDIO_FILE)
 
         # check if no threshold provided
         if THRESHOLD == None:
             THRESHOLD = self.fetchThreshold()
 
-        self.speaker.play("../static/audio/beep_hi.wav")
+        self.speaker.play(jasperpath.data('audio', 'beep_hi.wav'))
 
         # prepare recording stream
-        audio = pyaudio.PyAudio()
-        stream = audio.open(format=pyaudio.paInt16,
+        stream = self._audio.open(format=pyaudio.paInt16,
                             channels=1,
                             rate=RATE,
                             input=True,
@@ -218,20 +232,23 @@ class Mic:
             if average < THRESHOLD * 0.8:
                 break
 
-        self.speaker.play("../static/audio/beep_lo.wav")
+        self.speaker.play(jasperpath.data('audio', 'beep_lo.wav'))
 
         # save the audio data
         stream.stop_stream()
         stream.close()
-        audio.terminate()
-        write_frames = open_audio(AUDIO_FILE, 'wb')
-        write_frames.setnchannels(1)
-        write_frames.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
-        write_frames.setframerate(RATE)
-        write_frames.writeframes(''.join(frames))
-        write_frames.close()
 
-        return self.active_stt_engine.transcribe(AUDIO_FILE, MUSIC)
+        with tempfile.SpooledTemporaryFile(mode='w+b') as f:
+            wav_fp = wave.open(f, 'wb')
+            wav_fp.setnchannels(1)
+            wav_fp.setsampwidth(pyaudio.get_sample_size(pyaudio.paInt16))
+            wav_fp.setframerate(RATE)
+            wav_fp.writeframes(''.join(frames))
+            wav_fp.close()
+            f.seek(0)
+            mode = TranscriptionMode.MUSIC if MUSIC else TranscriptionMode.NORMAL
+            transcribed = self.active_stt_engine.transcribe(f, mode=mode)
+        return transcribed
 
     def say(self, phrase, OPTIONS=" -vdefault+m3 -p 40 -s 160 --stdout > say.wav"):
         # alter phrase before speaking

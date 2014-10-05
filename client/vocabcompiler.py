@@ -1,18 +1,11 @@
+# -*- coding: utf-8-*-
 """
     Iterates over all the WORDS variables in the modules and creates a dictionary for the client.
 """
 
 import os
-import sys
-import glob
-
-lib_path = os.path.abspath('../client')
-mod_path = os.path.abspath('../client/modules/')
-
-sys.path.append(lib_path)
-sys.path.append(mod_path)
-
 import g2p
+from brain import Brain
 
 
 def text2lm(in_filename, out_filename):
@@ -36,21 +29,13 @@ def compile(sentences, dictionary, languagemodel):
         Gets the words and creates the dictionary
     """
 
-    m = [os.path.basename(f)[:-3]
-         for f in glob.glob(os.path.dirname("../client/modules/") + "/*.py")]
+    modules = Brain.get_modules()
 
     words = []
-    for module_name in m:
-        try:
-            exec("import %s" % module_name)
-            eval("words.extend(%s.WORDS)" % module_name)
-        except:
-            pass  # module probably doesn't have the property
+    for module in modules:
+        words.extend(module.WORDS)
 
     words = list(set(words))
-
-    # for spotify module
-    words.extend(["MUSIC", "SPOTIFY"])
 
     # create the dictionary
     pronounced = g2p.translateWords(words)

@@ -1,3 +1,4 @@
+# -*- coding: utf-8-*-
 import urllib2
 import re
 import random
@@ -68,7 +69,7 @@ def handle(text, mic, profile):
             return [service.parse(w) for w in output]
 
         chosen_articles = extractOrdinals(text)
-        send_all = chosen_articles is [] and app_utils.isPositive(text)
+        send_all = not chosen_articles and app_utils.isPositive(text)
 
         if send_all or chosen_articles:
             mic.say("Sure, just give me a moment")

@@ -1,9 +1,8 @@
+# -*- coding: utf-8-*-
 import Queue
 from modules import Gmail
 from apscheduler.scheduler import Scheduler
 import logging
-logging.basicConfig()
-
 
 class Notifier(object):
 
@@ -17,11 +16,15 @@ class Notifier(object):
             self.timestamp = self.gather(self.timestamp)
 
     def __init__(self, profile):
+        self._logger = logging.getLogger(__name__)
         self.q = Queue.Queue()
         self.profile = profile
-        self.notifiers = [
-            self.NotificationClient(self.handleEmailNotifications, None),
-        ]
+        self.notifiers = []
+
+        if 'gmail_address' in profile and 'gmail_password' in profile:
+            self.notifiers.append(self.NotificationClient(self.handleEmailNotifications, None))
+        else:
+            self._logger.warning('gmail_address or gmail_password not set in profile, Gmail notifier will not be used')
 
         sched = Scheduler()
         sched.start()

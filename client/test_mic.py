@@ -1,3 +1,4 @@
+# -*- coding: utf-8-*-
 """
 A drop-in replacement for the Mic class used during unit testing.
 Designed to take pre-arranged inputs as an argument and store any
@@ -14,6 +15,9 @@ class Mic:
 
     def passiveListen(self, PERSONA):
         return True, "JASPER"
+
+    def activeListenToAllOptions(self, THRESHOLD=None, LISTEN=True, MUSIC=False):
+        return [self.activeListen(THRESHOLD=THRESHOLD, LISTEN=LISTEN, MUSIC=MUSIC)]
 
     def activeListen(self, THRESHOLD=None, LISTEN=True, MUSIC=False):
         if not LISTEN:
